@@ -37,7 +37,6 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
     mapping(uint256 => Round) public rounds;
     mapping(uint256 => mapping(address => Bet)) public bets;
 
-    uint256 public nextRoundId;
     IERC20 public immutable bettingToken;
 
     uint256 public constant MAX_ROUND_DURATION = 30 days;
@@ -65,12 +64,11 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
         _unpause();
     }
 
-    function launchRound(uint64 endTime) external onlyRole(ADMIN_ROLE) returns (uint256 roundId) {
+    function launchRound(uint256 roundId, uint64 endTime) external onlyRole(ADMIN_ROLE) {
         require(endTime > block.timestamp, "endTime in past");
         require(endTime <= block.timestamp + MAX_ROUND_DURATION, "endTime exceeds max duration");
+        require(rounds[roundId].endTime == 0, "round already exists");
 
-        roundId = nextRoundId++;
-        
         Round storage r = rounds[roundId];
         r.endTime = endTime;
         r.status = RoundStatus.OPEN;

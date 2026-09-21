@@ -78,16 +78,18 @@ contract PredictEscrowTest is Test {
     function test_LaunchRound_OnlyAdmin() public {
         vm.prank(alice);
         vm.expectRevert();
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
-        assertEq(escrow.nextRoundId(), 1);
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
+        
+        (uint64 endTime,,,,,,,) = escrow.rounds(0);
+        assertEq(endTime, uint64(block.timestamp + 1 days));
     }
 
     function test_ResolveRound_OnlyResolver() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.warp(block.timestamp + 2 days);
         
@@ -116,7 +118,7 @@ contract PredictEscrowTest is Test {
 
     function test_CannotBetAfterEndTime() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.warp(block.timestamp + 1 days + 1);
         
@@ -127,7 +129,7 @@ contract PredictEscrowTest is Test {
 
     function test_CannotResolveBeforeEndTime() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.prank(resolver);
         vm.expectRevert("round still open");
@@ -136,7 +138,7 @@ contract PredictEscrowTest is Test {
 
     function test_CannotResolveTwice() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         vm.warp(block.timestamp + 2 days);
         
         vm.startPrank(resolver);
@@ -151,7 +153,7 @@ contract PredictEscrowTest is Test {
 
     function test_BetRevertsOnAmountZero() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
         vm.expectRevert("amount must be > 0");
@@ -160,7 +162,7 @@ contract PredictEscrowTest is Test {
 
     function test_BetRevertsOnUnsetOutcome() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
         vm.expectRevert("invalid outcome");
@@ -169,7 +171,7 @@ contract PredictEscrowTest is Test {
 
     function test_CannotBetTwice() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.startPrank(alice);
         escrow.placeBet(0, PredictEscrow.Outcome.WIN, 100);
@@ -180,7 +182,7 @@ contract PredictEscrowTest is Test {
 
     function test_TokenTransferMatchesRecordedAmount() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
         escrow.placeBet(0, PredictEscrow.Outcome.WIN, 100);
@@ -194,7 +196,7 @@ contract PredictEscrowTest is Test {
 
     function test_WithdrawSucceedsBeforeEndTime() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
         escrow.placeBet(0, PredictEscrow.Outcome.WIN, 100);
@@ -213,7 +215,7 @@ contract PredictEscrowTest is Test {
 
     function test_WithdrawRevertsAfterEndTime() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
         escrow.placeBet(0, PredictEscrow.Outcome.WIN, 100);
@@ -227,7 +229,7 @@ contract PredictEscrowTest is Test {
 
     function test_WithdrawRevertsIfAlreadyWithdrawn() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.startPrank(alice);
         escrow.placeBet(0, PredictEscrow.Outcome.WIN, 100);
@@ -239,7 +241,7 @@ contract PredictEscrowTest is Test {
 
     function test_WithdrawCannotClaimLater() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
         escrow.placeBet(0, PredictEscrow.Outcome.WIN, 100);
@@ -260,7 +262,7 @@ contract PredictEscrowTest is Test {
 
     function test_PayoutMath_3WaySplit() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         // WIN=100 (Alice), DRAW=50 (Bob), LOSE=50 (Charlie)
         vm.prank(alice); escrow.placeBet(0, PredictEscrow.Outcome.WIN, 100);
@@ -283,7 +285,7 @@ contract PredictEscrowTest is Test {
 
     function test_PayoutMath_ZeroLosingPool() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.prank(alice); escrow.placeBet(0, PredictEscrow.Outcome.WIN, 100);
         vm.prank(bob); escrow.placeBet(0, PredictEscrow.Outcome.WIN, 50);
@@ -303,7 +305,7 @@ contract PredictEscrowTest is Test {
 
     function test_PayoutMath_ZeroWinningPool() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.prank(bob); escrow.placeBet(0, PredictEscrow.Outcome.DRAW, 100);
         vm.prank(charlie); escrow.placeBet(0, PredictEscrow.Outcome.LOSE, 50);
@@ -324,7 +326,7 @@ contract PredictEscrowTest is Test {
 
     function test_PayoutMath_SingleBettorTotal() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.prank(alice); escrow.placeBet(0, PredictEscrow.Outcome.WIN, 100);
         
@@ -339,7 +341,7 @@ contract PredictEscrowTest is Test {
 
     function test_DoubleClaimReverts() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         vm.prank(alice); escrow.placeBet(0, PredictEscrow.Outcome.WIN, 100);
         vm.warp(block.timestamp + 2 days);
         vm.prank(resolver);
@@ -354,7 +356,7 @@ contract PredictEscrowTest is Test {
     
     function test_ClaimOnCancelledRound() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         vm.prank(alice); escrow.placeBet(0, PredictEscrow.Outcome.WIN, 100);
         vm.prank(bob); escrow.placeBet(0, PredictEscrow.Outcome.LOSE, 200);
         
@@ -381,7 +383,7 @@ contract PredictEscrowTest is Test {
         PredictEscrow.Outcome result = PredictEscrow.Outcome((outcomeChoice % 3) + 1);
         
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.prank(alice); escrow.placeBet(0, PredictEscrow.Outcome.WIN, amount1);
         vm.prank(bob); escrow.placeBet(0, PredictEscrow.Outcome.DRAW, amount2);
@@ -423,7 +425,7 @@ contract PredictEscrowTest is Test {
         rToken.approve(address(rEscrow), type(uint256).max);
         
         vm.prank(admin);
-        rEscrow.launchRound(uint64(block.timestamp + 1 days));
+        rEscrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
         rEscrow.placeBet(0, PredictEscrow.Outcome.WIN, 100);
@@ -437,7 +439,7 @@ contract PredictEscrowTest is Test {
 
     function test_PauseBlocksPlaceBetButNotWithdrawOrClaim() public {
         vm.prank(admin);
-        escrow.launchRound(uint64(block.timestamp + 1 days));
+        escrow.launchRound(0, uint64(block.timestamp + 1 days));
         
         vm.prank(alice); escrow.placeBet(0, PredictEscrow.Outcome.WIN, 100);
         vm.prank(bob); escrow.placeBet(0, PredictEscrow.Outcome.LOSE, 200);
