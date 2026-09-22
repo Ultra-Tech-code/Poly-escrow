@@ -491,4 +491,39 @@ contract SachetMarketTest is Test {
         vm.prank(bob);
         escrow.claim(bytes32(0));
     }
+
+    function test_UpdateToken_RevertsIfUnpaused() public {
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSignature("ExpectedPause()"));
+        escrow.updateToken(address(42));
+    }
+
+    function test_UpdateToken_SuccessWhenPaused() public {
+        vm.prank(admin);
+        escrow.pause();
+        
+        vm.prank(admin);
+        escrow.updateToken(address(42));
+        assertEq(address(escrow.sachetMarketToken()), address(42));
+    }
+
+    function test_WithdrawTreasury_Success() public {
+        // Mint some tokens directly to contract
+        token.mint(address(escrow), 1000);
+        
+        uint256 adminBalBefore = token.balanceOf(admin);
+        
+        vm.prank(admin);
+        escrow.withdrawTreasury(address(token), admin, 400);
+        
+        assertEq(token.balanceOf(admin) - adminBalBefore, 400);
+        assertEq(token.balanceOf(address(escrow)), 600);
+        
+        // Test withdraw max
+        vm.prank(admin);
+        escrow.withdrawTreasury(address(token), admin, type(uint256).max);
+        
+        assertEq(token.balanceOf(address(escrow)), 0);
+        assertEq(token.balanceOf(admin) - adminBalBefore, 1000);
+    }
 }

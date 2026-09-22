@@ -37,7 +37,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
     mapping(bytes32 => Pool) public pools;
     mapping(bytes32 => mapping(address => Bet)) public bets;
 
-    IERC20 public immutable sachetMarketToken;
+    IERC20 public sachetMarketToken;
 
     error AlreadyBetThisPool();
     error AlreadyClaimed();
@@ -60,6 +60,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
     error ReceivedAmountMustBeGreaterThan0();
     error TooLateToWithdraw();
     error ZeroAddress();
+    error AmountExceedsBalance();
 
     uint256 public constant MAX_POOL_DURATION = 30 days;
 
@@ -232,18 +233,24 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         emit Claimed(poolId, msg.sender, payout);
     }
 
-    function sweepDust(bytes32 poolId, address to) external onlyRole(ADMIN_ROLE) {
-        Pool storage r = pools[poolId];
-        if (!(r.status == PoolStatus.RESOLVED || r.status == PoolStatus.CANCELLED)) revert NotResolvedOrCancelled();
-        if (!(block.timestamp >= r.expiresAt + 90 days)) revert ClaimWindowStillOpen();
+    function updateToken(address newToken) external onlyRole(ADMIN_ROLE) whenPaused {
+        if (!(newToken != address(0))) revert ZeroAddress();
+        sachetMarketToken = IERC20(newToken);
+    }
+
+    function withdrawTreasury(address token, address to, uint256 amount) external onlyRole(ADMIN_ROLE) {
+        if (!(to != address(0))) revert ZeroAddress();
         
-        // This is safe because totalClaimed can only be at most totalPool in RESOLVED/CANCELLED.
-        uint256 dust = r.totalPool - r.totalClaimed;
-        if (!(dust > 0)) revert NoDustToSweep();
+        uint256 bal = IERC20(token).balanceOf(address(this));
+        if (amount == type(uint256).max) {
+            amount = bal;
+        } else if (amount > bal) {
+            revert AmountExceedsBalance();
+        }
         
-        r.totalClaimed = r.totalPool; // Prevent double sweeping
-        
-        sachetMarketToken.safeTransfer(to, dust);
+        if (amount > 0) {
+            IERC20(token).safeTransfer(to, amount);
+        }
     }
 
     function getPool(bytes32 poolId) external view returns (Pool memory) {
