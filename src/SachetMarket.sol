@@ -37,7 +37,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
     mapping(bytes32 => Pool) public pools;
     mapping(bytes32 => mapping(address => Bet)) public bets;
 
-    IERC20 public immutable bettingToken;
+    IERC20 public immutable sachetMarketToken;
 
     uint256 public constant MAX_POOL_DURATION = 30 days;
 
@@ -48,10 +48,10 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
     event PoolCancelled(bytes32 indexed poolId);
     event Claimed(bytes32 indexed poolId, address indexed user, uint256 payout);
 
-    constructor(address _bettingToken, address _adminMultisig) {
-        require(_bettingToken != address(0), "SachetMarket: Zero address");
+    constructor(address _sachetMarketToken, address _adminMultisig) {
+        require(_sachetMarketToken != address(0), "SachetMarket: Zero address");
         require(_adminMultisig != address(0), "SachetMarket: Zero address");
-        bettingToken = IERC20(_bettingToken);
+        sachetMarketToken = IERC20(_sachetMarketToken);
         _grantRole(DEFAULT_ADMIN_ROLE, _adminMultisig);
         _grantRole(ADMIN_ROLE, _adminMultisig);
     }
@@ -88,9 +88,9 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         Bet storage b = bets[poolId][msg.sender];
         require(b.amount == 0, "SachetMarket: already bet this pool");
 
-        uint256 balanceBefore = bettingToken.balanceOf(address(this));
-        bettingToken.safeTransferFrom(msg.sender, address(this), amount);
-        uint256 receivedAmount = bettingToken.balanceOf(address(this)) - balanceBefore;
+        uint256 balanceBefore = sachetMarketToken.balanceOf(address(this));
+        sachetMarketToken.safeTransferFrom(msg.sender, address(this), amount);
+        uint256 receivedAmount = sachetMarketToken.balanceOf(address(this)) - balanceBefore;
         require(receivedAmount > 0, "SachetMarket: received amount must be > 0");
 
         b.amount = receivedAmount;
@@ -133,7 +133,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         
         b.withdrawn = true;
         
-        bettingToken.safeTransfer(msg.sender, amountToReturn);
+        sachetMarketToken.safeTransfer(msg.sender, amountToReturn);
         
         emit BetWithdrawn(poolId, msg.sender, amountToReturn);
     }
@@ -204,7 +204,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         
         if (payout > 0) {
             r.totalClaimed += payout;
-            bettingToken.safeTransfer(msg.sender, payout);
+            sachetMarketToken.safeTransfer(msg.sender, payout);
         }
 
         emit Claimed(poolId, msg.sender, payout);
@@ -221,7 +221,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         
         r.totalClaimed = r.totalPool; // Prevent double sweeping
         
-        bettingToken.safeTransfer(to, dust);
+        sachetMarketToken.safeTransfer(to, dust);
     }
 
     function getPool(bytes32 poolId) external view returns (Pool memory) {
