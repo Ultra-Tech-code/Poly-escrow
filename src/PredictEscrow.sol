@@ -13,16 +13,16 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant RESOLVER_ROLE = keccak256("RESOLVER_ROLE");
 
-    enum Outcome { UNSET, WIN, DRAW, LOSE }
-    enum RoundStatus { OPEN, LOCKED, RESOLVED, CANCELLED }
+    enum Outcome { UNSET, HOME, DRAW, AWAY, VOID }
+    enum PoolStatus { OPEN, LOCKED, RESOLVED, CANCELLED }
 
-    struct Round {
-        uint64 endTime;
-        RoundStatus status;
+    struct Pool {
+        uint64 expiresAt;
+        PoolStatus status;
         Outcome result;
-        uint256 poolWin;
+        uint256 poolHome;
         uint256 poolDraw;
-        uint256 poolLose;
+        uint256 poolAway;
         uint256 totalPool;
         uint256 totalClaimed; // Tracked to safely sweep dust
     }
@@ -34,19 +34,19 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
         bool claimed;
     }
 
-    mapping(uint256 => Round) public rounds;
-    mapping(uint256 => mapping(address => Bet)) public bets;
+    mapping(bytes32 => Pool) public pools;
+    mapping(bytes32 => mapping(address => Bet)) public bets;
 
     IERC20 public immutable bettingToken;
 
-    uint256 public constant MAX_ROUND_DURATION = 30 days;
+    uint256 public constant MAX_POOL_DURATION = 30 days;
 
-    event RoundLaunched(uint256 indexed roundId, uint64 endTime);
-    event BetPlaced(uint256 indexed roundId, address indexed user, Outcome outcome, uint256 amount);
-    event BetWithdrawn(uint256 indexed roundId, address indexed user, uint256 amount);
-    event RoundResolved(uint256 indexed roundId, Outcome result);
-    event RoundCancelled(uint256 indexed roundId);
-    event Claimed(uint256 indexed roundId, address indexed user, uint256 payout);
+    event PoolLaunched(bytes32 indexed poolId, uint64 expiresAt);
+    event BetPlaced(bytes32 indexed poolId, address indexed user, Outcome outcome, uint256 amount);
+    event BetWithdrawn(bytes32 indexed poolId, address indexed user, uint256 amount);
+    event PoolResolved(bytes32 indexed poolId, Outcome result);
+    event PoolCancelled(bytes32 indexed poolId);
+    event Claimed(bytes32 indexed poolId, address indexed user, uint256 payout);
 
     constructor(address _bettingToken, address _adminMultisig) {
         require(_bettingToken != address(0), "Zero address");
@@ -64,28 +64,28 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
         _unpause();
     }
 
-    function launchRound(uint256 roundId, uint64 endTime) external onlyRole(ADMIN_ROLE) {
-        require(endTime > block.timestamp, "endTime in past");
-        require(endTime <= block.timestamp + MAX_ROUND_DURATION, "endTime exceeds max duration");
-        require(rounds[roundId].endTime == 0, "round already exists");
+    function launchPool(bytes32 poolId, uint64 expiresAt) external onlyRole(ADMIN_ROLE) {
+        require(expiresAt > block.timestamp, "expiresAt in past");
+        require(expiresAt <= block.timestamp + MAX_POOL_DURATION, "expiresAt exceeds max duration");
+        require(pools[poolId].expiresAt == 0, "round already exists");
 
-        Round storage r = rounds[roundId];
-        r.endTime = endTime;
-        r.status = RoundStatus.OPEN;
+        Pool storage r = pools[poolId];
+        r.expiresAt = expiresAt;
+        r.status = PoolStatus.OPEN;
         // Other fields default to 0/UNSET
 
-        emit RoundLaunched(roundId, endTime);
+        emit PoolLaunched(poolId, expiresAt);
     }
 
-    function placeBet(uint256 roundId, Outcome outcome, uint256 amount) external nonReentrant whenNotPaused {
-        Round storage r = rounds[roundId];
-        require(r.endTime != 0, "round does not exist");
-        require(block.timestamp < r.endTime, "round closed");
-        require(r.status == RoundStatus.OPEN, "round not open");
+    function placeBet(bytes32 poolId, Outcome outcome, uint256 amount) external nonReentrant whenNotPaused {
+        Pool storage r = pools[poolId];
+        require(r.expiresAt != 0, "round does not exist");
+        require(block.timestamp < r.expiresAt, "round closed");
+        require(r.status == PoolStatus.OPEN, "round not open");
         require(outcome != Outcome.UNSET, "invalid outcome");
         require(amount > 0, "amount must be > 0");
 
-        Bet storage b = bets[roundId][msg.sender];
+        Bet storage b = bets[poolId][msg.sender];
         require(b.amount == 0, "already bet this round");
 
         uint256 balanceBefore = bettingToken.balanceOf(address(this));
@@ -98,35 +98,35 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
         b.withdrawn = false;
         b.claimed = false;
 
-        if (outcome == Outcome.WIN) {
-            r.poolWin += receivedAmount;
+        if (outcome == Outcome.HOME) {
+            r.poolHome += receivedAmount;
         } else if (outcome == Outcome.DRAW) {
             r.poolDraw += receivedAmount;
-        } else if (outcome == Outcome.LOSE) {
-            r.poolLose += receivedAmount;
+        } else if (outcome == Outcome.AWAY) {
+            r.poolAway += receivedAmount;
         }
 
         r.totalPool += receivedAmount;
 
-        emit BetPlaced(roundId, msg.sender, outcome, receivedAmount);
+        emit BetPlaced(poolId, msg.sender, outcome, receivedAmount);
     }
 
-    function withdrawBet(uint256 roundId) external nonReentrant {
-        Round storage r = rounds[roundId];
-        require(block.timestamp < r.endTime, "too late to withdraw");
-        require(r.status == RoundStatus.OPEN, "round not open");
+    function withdrawBet(bytes32 poolId) external nonReentrant {
+        Pool storage r = pools[poolId];
+        require(block.timestamp < r.expiresAt, "too late to withdraw");
+        require(r.status == PoolStatus.OPEN, "round not open");
 
-        Bet storage b = bets[roundId][msg.sender];
+        Bet storage b = bets[poolId][msg.sender];
         require(b.amount > 0 && !b.withdrawn, "no active bet");
 
         uint256 amountToReturn = b.amount;
         
-        if (b.outcome == Outcome.WIN) {
-            r.poolWin -= amountToReturn;
+        if (b.outcome == Outcome.HOME) {
+            r.poolHome -= amountToReturn;
         } else if (b.outcome == Outcome.DRAW) {
             r.poolDraw -= amountToReturn;
-        } else if (b.outcome == Outcome.LOSE) {
-            r.poolLose -= amountToReturn;
+        } else if (b.outcome == Outcome.AWAY) {
+            r.poolAway -= amountToReturn;
         }
 
         r.totalPool -= amountToReturn;
@@ -135,58 +135,58 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
         
         bettingToken.safeTransfer(msg.sender, amountToReturn);
         
-        emit BetWithdrawn(roundId, msg.sender, amountToReturn);
+        emit BetWithdrawn(poolId, msg.sender, amountToReturn);
     }
 
-    function resolveRound(uint256 roundId, Outcome result) external onlyRole(RESOLVER_ROLE) {
-        Round storage r = rounds[roundId];
-        require(r.endTime != 0, "round does not exist");
-        require(block.timestamp >= r.endTime, "round still open");
-        require(r.status == RoundStatus.OPEN, "already resolved/cancelled");
+    function resolvePool(bytes32 poolId, Outcome result) external onlyRole(RESOLVER_ROLE) {
+        Pool storage r = pools[poolId];
+        require(r.expiresAt != 0, "round does not exist");
+        require(block.timestamp >= r.expiresAt, "round still open");
+        require(r.status == PoolStatus.OPEN, "already resolved/cancelled");
         require(result != Outcome.UNSET, "invalid result");
 
-        r.status = RoundStatus.RESOLVED;
+        r.status = PoolStatus.RESOLVED;
         r.result = result;
 
-        emit RoundResolved(roundId, result);
+        emit PoolResolved(poolId, result);
     }
 
-    function cancelRound(uint256 roundId) external onlyRole(ADMIN_ROLE) {
-        Round storage r = rounds[roundId];
-        require(r.endTime != 0, "round does not exist");
-        require(r.status == RoundStatus.OPEN, "round not open");
+    function cancelPool(bytes32 poolId) external onlyRole(ADMIN_ROLE) {
+        Pool storage r = pools[poolId];
+        require(r.expiresAt != 0, "round does not exist");
+        require(r.status == PoolStatus.OPEN, "round not open");
         
-        r.status = RoundStatus.CANCELLED;
+        r.status = PoolStatus.CANCELLED;
         
-        emit RoundCancelled(roundId);
+        emit PoolCancelled(poolId);
     }
 
-    function claim(uint256 roundId) external nonReentrant {
-        Round storage r = rounds[roundId];
+    function claim(bytes32 poolId) external nonReentrant {
+        Pool storage r = pools[poolId];
         require(
-            r.status == RoundStatus.RESOLVED || r.status == RoundStatus.CANCELLED,
+            r.status == PoolStatus.RESOLVED || r.status == PoolStatus.CANCELLED,
             "not resolved or cancelled"
         );
 
-        Bet storage b = bets[roundId][msg.sender];
+        Bet storage b = bets[poolId][msg.sender];
         require(b.amount > 0 && !b.withdrawn, "no claimable bet");
         require(!b.claimed, "already claimed");
 
         uint256 payout = 0;
 
-        if (r.status == RoundStatus.CANCELLED) {
+        if (r.status == PoolStatus.CANCELLED) {
             payout = b.amount;
         } else {
             // RESOLVED
             Outcome result = r.result;
             uint256 winningPool;
 
-            if (result == Outcome.WIN) {
-                winningPool = r.poolWin;
+            if (result == Outcome.HOME) {
+                winningPool = r.poolHome;
             } else if (result == Outcome.DRAW) {
                 winningPool = r.poolDraw;
-            } else if (result == Outcome.LOSE) {
-                winningPool = r.poolLose;
+            } else if (result == Outcome.AWAY) {
+                winningPool = r.poolAway;
             }
 
             uint256 losingPool = r.totalPool - winningPool;
@@ -207,13 +207,13 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
             bettingToken.safeTransfer(msg.sender, payout);
         }
 
-        emit Claimed(roundId, msg.sender, payout);
+        emit Claimed(poolId, msg.sender, payout);
     }
 
-    function sweepDust(uint256 roundId, address to) external onlyRole(ADMIN_ROLE) {
-        Round storage r = rounds[roundId];
-        require(r.status == RoundStatus.RESOLVED || r.status == RoundStatus.CANCELLED, "not resolved or cancelled");
-        require(block.timestamp >= r.endTime + 90 days, "claim window still open");
+    function sweepDust(bytes32 poolId, address to) external onlyRole(ADMIN_ROLE) {
+        Pool storage r = pools[poolId];
+        require(r.status == PoolStatus.RESOLVED || r.status == PoolStatus.CANCELLED, "not resolved or cancelled");
+        require(block.timestamp >= r.expiresAt + 90 days, "claim window still open");
         
         // This is safe because totalClaimed can only be at most totalPool in RESOLVED/CANCELLED.
         uint256 dust = r.totalPool - r.totalClaimed;
