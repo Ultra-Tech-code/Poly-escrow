@@ -207,13 +207,9 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         uint256 receivedAmount = sachetMarketToken.balanceOf(address(this)) - balanceBefore;
         if (!(receivedAmount > 0)) revert ReceivedAmountMustBeGreaterThan0();
 
-        if (hasActiveBet) {
-            b.amount += receivedAmount;
-        } else {
-            b.amount = receivedAmount;
-            b.outcome = outcome;
-            b.claimed = false;
-        }
+        b.amount += receivedAmount;
+        b.outcome = outcome;
+        b.claimed = false;
         
 
         if (outcome == Outcome.HOME) {
