@@ -50,7 +50,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         uint256 poolDraw;
         uint256 poolAway;
         uint256 totalPool;
-        uint256 totalClaimed; // Tracked to safely sweep dust
+        uint256 totalClaimed;
     }
 
     /**
@@ -76,8 +76,6 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
     IERC20 public sachetMarketToken;
 
     // Custom Errors
-    /// @notice Thrown when a user attempts to place a bet in a pool they have already bet on
-    error AlreadyBetThisPool();
     /// @notice Thrown when a user attempts to claim a payout more than once
     error AlreadyClaimed();
     /// @notice Thrown when an admin/resolver attempts an action on a pool that is already finalized
@@ -120,26 +118,20 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
     error ZeroAddress();
     /// @notice Thrown when an admin attempts to withdraw more treasury tokens than available
     error AmountExceedsBalance();
+    /// @notice Thrown when a user attempts to change their bet outcome without withdrawing first
+    error CannotChangeOutcome();
 
     /// @notice Maximum allowed duration between pool creation and expiry
     uint256 public constant MAX_POOL_DURATION = 30 days;
 
     // Events
-    /// @notice Emitted when a new betting pool is created
     event PoolLaunched(bytes32 indexed poolId, uint64 expiresAt);
-    /// @notice Emitted when a user places a valid bet
     event BetPlaced(bytes32 indexed poolId, address indexed user, Outcome outcome, uint256 amount);
-    /// @notice Emitted when a user successfully withdraws a bet before the lock time
     event BetWithdrawn(bytes32 indexed poolId, address indexed user, uint256 amount);
-    /// @notice Emitted when a pool is finalized by a resolver
     event PoolResolved(bytes32 indexed poolId, Outcome result);
-    /// @notice Emitted when a pool is emergency cancelled by an admin
     event PoolCancelled(bytes32 indexed poolId);
-    /// @notice Emitted when a user claims their winnings or refund
     event Claimed(bytes32 indexed poolId, address indexed user, uint256 payout);
-    /// @notice Emitted when the betting token is updated by an admin
     event TokenUpdated(address indexed oldToken, address indexed newToken);
-    /// @notice Emitted when the treasury withdraws funds from the contract
     event TreasuryWithdrawn(address indexed token, address indexed to, uint256 amount);
 
 
@@ -210,17 +202,26 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         if (!(amount > 0)) revert AmountMustBeGreaterThan0();
 
         Bet storage b = bets[poolId][msg.sender];
-        if (!(b.amount == 0)) revert AlreadyBetThisPool();
+        bool hasActiveBet = (b.amount > 0 && !b.withdrawn);
+        
+        if (hasActiveBet) {
+            if (!(b.outcome == outcome)) revert CannotChangeOutcome();
+        }
 
         uint256 balanceBefore = sachetMarketToken.balanceOf(address(this));
         sachetMarketToken.safeTransferFrom(msg.sender, address(this), amount);
         uint256 receivedAmount = sachetMarketToken.balanceOf(address(this)) - balanceBefore;
         if (!(receivedAmount > 0)) revert ReceivedAmountMustBeGreaterThan0();
 
-        b.amount = receivedAmount;
-        b.outcome = outcome;
-        b.withdrawn = false;
-        b.claimed = false;
+        if (hasActiveBet) {
+            b.amount += receivedAmount;
+        } else {
+            b.amount = receivedAmount;
+            b.outcome = outcome;
+            b.withdrawn = false;
+            b.claimed = false;
+        }
+        
 
         if (outcome == Outcome.HOME) {
             r.poolHome += receivedAmount;
