@@ -104,7 +104,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         if (!(r.expiresAt != 0)) revert PoolDoesNotExist();
         if (!(block.timestamp < r.expiresAt)) revert PoolClosed();
         if (!(r.status == PoolStatus.OPEN)) revert PoolNotOpen();
-        if (!(outcome != Outcome.UNSET)) revert InvalidOutcome();
+        if (!(outcome != Outcome.UNSET && outcome != Outcome.VOID)) revert InvalidOutcome();
         if (!(amount > 0)) revert AmountMustBeGreaterThan0();
 
         Bet storage b = bets[poolId][msg.sender];
@@ -196,7 +196,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
 
         uint256 payout = 0;
 
-        if (r.status == PoolStatus.CANCELLED) {
+        if (r.status == PoolStatus.CANCELLED || r.result == Outcome.VOID) {
             payout = b.amount;
         } else {
             // RESOLVED

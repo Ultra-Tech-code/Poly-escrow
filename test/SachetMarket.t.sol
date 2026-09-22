@@ -169,6 +169,15 @@ contract SachetMarketTest is Test {
         escrow.placeBet(bytes32(0), SachetMarket.Outcome.UNSET, 100);
     }
 
+    function test_BetRevertsOnVoidOutcome() public {
+        vm.prank(admin);
+        escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
+        
+        vm.prank(alice);
+        vm.expectRevert(SachetMarket.InvalidOutcome.selector);
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.VOID, 100);
+    }
+
     function test_CannotBetTwice() public {
         vm.prank(admin);
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
@@ -362,6 +371,25 @@ contract SachetMarketTest is Test {
         
         vm.prank(admin);
         escrow.cancelPool(bytes32(0));
+        
+        uint256 aliceBalBefore = token.balanceOf(alice);
+        vm.prank(alice); escrow.claim(bytes32(0));
+        assertEq(token.balanceOf(alice) - aliceBalBefore, 100);
+        
+        uint256 bobBalBefore = token.balanceOf(bob);
+        vm.prank(bob); escrow.claim(bytes32(0));
+        assertEq(token.balanceOf(bob) - bobBalBefore, 200);
+    }
+
+    function test_ClaimOnVoidRound() public {
+        vm.prank(admin);
+        escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
+        vm.prank(alice); escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
+        vm.prank(bob); escrow.placeBet(bytes32(0), SachetMarket.Outcome.AWAY, 200);
+        
+        vm.warp(block.timestamp + 2 days);
+        vm.prank(resolver);
+        escrow.resolvePool(bytes32(0), SachetMarket.Outcome.VOID);
         
         uint256 aliceBalBefore = token.balanceOf(alice);
         vm.prank(alice); escrow.claim(bytes32(0));
