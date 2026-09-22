@@ -556,8 +556,10 @@ contract SachetMarketTest is Test {
         
         uint256 adminBalBefore = token.balanceOf(admin);
         
-        vm.prank(admin);
+        vm.startPrank(admin);
+        escrow.pause();
         escrow.withdrawTreasury(address(token), admin, 400);
+        vm.stopPrank();
         
         assertEq(token.balanceOf(admin) - adminBalBefore, 400);
         assertEq(token.balanceOf(address(escrow)), 600);

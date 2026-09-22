@@ -371,9 +371,9 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
      * @param token The address of the ERC20 token to withdraw.
      * @param to The destination address for the tokens.
      * @param amount The amount of tokens to withdraw (use type(uint256).max for full balance).
-     * @dev Only callable by accounts with the ADMIN_ROLE.
+     * @dev Only callable by accounts with the ADMIN_ROLE when the contract is paused.
      */
-    function withdrawTreasury(address token, address to, uint256 amount) external onlyRole(ADMIN_ROLE) {
+    function withdrawTreasury(address token, address to, uint256 amount) external onlyRole(ADMIN_ROLE) whenPaused {
         if (!(to != address(0))) revert ZeroAddress();
         
         uint256 bal = IERC20(token).balanceOf(address(this));
