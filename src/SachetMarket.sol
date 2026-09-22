@@ -70,6 +70,8 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
     event PoolResolved(bytes32 indexed poolId, Outcome result);
     event PoolCancelled(bytes32 indexed poolId);
     event Claimed(bytes32 indexed poolId, address indexed user, uint256 payout);
+    event TokenUpdated(address indexed oldToken, address indexed newToken);
+    event TreasuryWithdrawn(address indexed token, address indexed to, uint256 amount);
 
     constructor(address _sachetMarketToken, address _adminMultisig) {
         if (!(_sachetMarketToken != address(0))) revert ZeroAddress();
@@ -235,7 +237,9 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
 
     function updateToken(address newToken) external onlyRole(ADMIN_ROLE) whenPaused {
         if (!(newToken != address(0))) revert ZeroAddress();
+        address oldToken = address(sachetMarketToken);
         sachetMarketToken = IERC20(newToken);
+        emit TokenUpdated(oldToken, newToken);
     }
 
     function withdrawTreasury(address token, address to, uint256 amount) external onlyRole(ADMIN_ROLE) {
@@ -250,6 +254,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         
         if (amount > 0) {
             IERC20(token).safeTransfer(to, amount);
+            emit TreasuryWithdrawn(token, to, amount);
         }
     }
 
