@@ -40,6 +40,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
      * @param poolDraw Total tokens wagered on the DRAW outcome
      * @param poolAway Total tokens wagered on the AWAY outcome
      * @param totalPool The total aggregated tokens wagered across all outcomes
+     * @param totalClaimed Tracks total payouts claimed from this pool (useful for UI/Analytics)
      */
     struct Pool {
         uint64 expiresAt;
@@ -340,6 +341,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         b.claimed = true;
         
         if (payout > 0) {
+            r.totalClaimed += payout;
             sachetMarketToken.safeTransfer(msg.sender, payout);
         }
 
