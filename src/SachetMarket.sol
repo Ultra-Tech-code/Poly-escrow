@@ -39,6 +39,28 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
 
     IERC20 public immutable sachetMarketToken;
 
+    error AlreadyBetThisPool();
+    error AlreadyClaimed();
+    error AlreadyResolvedOrCancelled();
+    error AmountMustBeGreaterThan0();
+    error ClaimWindowStillOpen();
+    error ExpiresatExceedsMaxDuration();
+    error ExpiresatInPast();
+    error InvalidOutcome();
+    error InvalidResult();
+    error NoActiveBet();
+    error NoClaimableBet();
+    error NoDustToSweep();
+    error NotResolvedOrCancelled();
+    error PoolAlreadyExists();
+    error PoolClosed();
+    error PoolDoesNotExist();
+    error PoolNotOpen();
+    error PoolStillOpen();
+    error ReceivedAmountMustBeGreaterThan0();
+    error TooLateToWithdraw();
+    error ZeroAddress();
+
     uint256 public constant MAX_POOL_DURATION = 30 days;
 
     event PoolLaunched(bytes32 indexed poolId, uint64 expiresAt);
@@ -49,8 +71,8 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
     event Claimed(bytes32 indexed poolId, address indexed user, uint256 payout);
 
     constructor(address _sachetMarketToken, address _adminMultisig) {
-        require(_sachetMarketToken != address(0), "SachetMarket: Zero address");
-        require(_adminMultisig != address(0), "SachetMarket: Zero address");
+        if (!(_sachetMarketToken != address(0))) revert ZeroAddress();
+        if (!(_adminMultisig != address(0))) revert ZeroAddress();
         sachetMarketToken = IERC20(_sachetMarketToken);
         _grantRole(DEFAULT_ADMIN_ROLE, _adminMultisig);
         _grantRole(ADMIN_ROLE, _adminMultisig);
@@ -65,9 +87,9 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
     }
 
     function launchPool(bytes32 poolId, uint64 expiresAt) external onlyRole(ADMIN_ROLE) {
-        require(expiresAt > block.timestamp, "SachetMarket: expiresAt in past");
-        require(expiresAt <= block.timestamp + MAX_POOL_DURATION, "SachetMarket: expiresAt exceeds max duration");
-        require(pools[poolId].expiresAt == 0, "SachetMarket: pool already exists");
+        if (!(expiresAt > block.timestamp)) revert ExpiresatInPast();
+        if (!(expiresAt <= block.timestamp + MAX_POOL_DURATION)) revert ExpiresatExceedsMaxDuration();
+        if (!(pools[poolId].expiresAt == 0)) revert PoolAlreadyExists();
 
         Pool storage r = pools[poolId];
         r.expiresAt = expiresAt;
@@ -79,19 +101,19 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
 
     function placeBet(bytes32 poolId, Outcome outcome, uint256 amount) external nonReentrant whenNotPaused {
         Pool storage r = pools[poolId];
-        require(r.expiresAt != 0, "SachetMarket: pool does not exist");
-        require(block.timestamp < r.expiresAt, "SachetMarket: pool closed");
-        require(r.status == PoolStatus.OPEN, "SachetMarket: pool not open");
-        require(outcome != Outcome.UNSET, "SachetMarket: invalid outcome");
-        require(amount > 0, "SachetMarket: amount must be > 0");
+        if (!(r.expiresAt != 0)) revert PoolDoesNotExist();
+        if (!(block.timestamp < r.expiresAt)) revert PoolClosed();
+        if (!(r.status == PoolStatus.OPEN)) revert PoolNotOpen();
+        if (!(outcome != Outcome.UNSET)) revert InvalidOutcome();
+        if (!(amount > 0)) revert AmountMustBeGreaterThan0();
 
         Bet storage b = bets[poolId][msg.sender];
-        require(b.amount == 0, "SachetMarket: already bet this pool");
+        if (!(b.amount == 0)) revert AlreadyBetThisPool();
 
         uint256 balanceBefore = sachetMarketToken.balanceOf(address(this));
         sachetMarketToken.safeTransferFrom(msg.sender, address(this), amount);
         uint256 receivedAmount = sachetMarketToken.balanceOf(address(this)) - balanceBefore;
-        require(receivedAmount > 0, "SachetMarket: received amount must be > 0");
+        if (!(receivedAmount > 0)) revert ReceivedAmountMustBeGreaterThan0();
 
         b.amount = receivedAmount;
         b.outcome = outcome;
@@ -113,11 +135,11 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
 
     function withdrawBet(bytes32 poolId) external nonReentrant {
         Pool storage r = pools[poolId];
-        require(block.timestamp < r.expiresAt, "SachetMarket: too late to withdraw");
-        require(r.status == PoolStatus.OPEN, "SachetMarket: pool not open");
+        if (!(block.timestamp < r.expiresAt)) revert TooLateToWithdraw();
+        if (!(r.status == PoolStatus.OPEN)) revert PoolNotOpen();
 
         Bet storage b = bets[poolId][msg.sender];
-        require(b.amount > 0 && !b.withdrawn, "SachetMarket: no active bet");
+        if (!(b.amount > 0 && !b.withdrawn)) revert NoActiveBet();
 
         uint256 amountToReturn = b.amount;
         
@@ -140,10 +162,10 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
 
     function resolvePool(bytes32 poolId, Outcome result) external onlyRole(RESOLVER_ROLE) {
         Pool storage r = pools[poolId];
-        require(r.expiresAt != 0, "SachetMarket: pool does not exist");
-        require(block.timestamp >= r.expiresAt, "SachetMarket: pool still open");
-        require(r.status == PoolStatus.OPEN, "SachetMarket: already resolved/cancelled");
-        require(result != Outcome.UNSET, "SachetMarket: invalid result");
+        if (!(r.expiresAt != 0)) revert PoolDoesNotExist();
+        if (!(block.timestamp >= r.expiresAt)) revert PoolStillOpen();
+        if (!(r.status == PoolStatus.OPEN)) revert AlreadyResolvedOrCancelled();
+        if (!(result != Outcome.UNSET)) revert InvalidResult();
 
         r.status = PoolStatus.RESOLVED;
         r.result = result;
@@ -153,8 +175,8 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
 
     function cancelPool(bytes32 poolId) external onlyRole(ADMIN_ROLE) {
         Pool storage r = pools[poolId];
-        require(r.expiresAt != 0, "SachetMarket: pool does not exist");
-        require(r.status == PoolStatus.OPEN, "SachetMarket: pool not open");
+        if (!(r.expiresAt != 0)) revert PoolDoesNotExist();
+        if (!(r.status == PoolStatus.OPEN)) revert PoolNotOpen();
         
         r.status = PoolStatus.CANCELLED;
         
@@ -169,8 +191,8 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         );
 
         Bet storage b = bets[poolId][msg.sender];
-        require(b.amount > 0 && !b.withdrawn, "SachetMarket: no claimable bet");
-        require(!b.claimed, "SachetMarket: already claimed");
+        if (!(b.amount > 0 && !b.withdrawn)) revert NoClaimableBet();
+        if (!(!b.claimed)) revert AlreadyClaimed();
 
         uint256 payout = 0;
 
@@ -212,12 +234,12 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
 
     function sweepDust(bytes32 poolId, address to) external onlyRole(ADMIN_ROLE) {
         Pool storage r = pools[poolId];
-        require(r.status == PoolStatus.RESOLVED || r.status == PoolStatus.CANCELLED, "SachetMarket: not resolved or cancelled");
-        require(block.timestamp >= r.expiresAt + 90 days, "SachetMarket: claim window still open");
+        if (!(r.status == PoolStatus.RESOLVED || r.status == PoolStatus.CANCELLED)) revert NotResolvedOrCancelled();
+        if (!(block.timestamp >= r.expiresAt + 90 days)) revert ClaimWindowStillOpen();
         
         // This is safe because totalClaimed can only be at most totalPool in RESOLVED/CANCELLED.
         uint256 dust = r.totalPool - r.totalClaimed;
-        require(dust > 0, "SachetMarket: no dust to sweep");
+        if (!(dust > 0)) revert NoDustToSweep();
         
         r.totalClaimed = r.totalPool; // Prevent double sweeping
         

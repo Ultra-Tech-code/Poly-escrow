@@ -112,7 +112,7 @@ contract SachetMarketTest is Test {
 
     function test_CannotBetBeforeRoundExists() public {
         vm.prank(alice);
-        vm.expectRevert("SachetMarket: pool does not exist");
+        vm.expectRevert(SachetMarket.PoolDoesNotExist.selector);
         escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
     }
 
@@ -123,7 +123,7 @@ contract SachetMarketTest is Test {
         vm.warp(block.timestamp + 1 days + 1);
         
         vm.prank(alice);
-        vm.expectRevert("SachetMarket: pool closed");
+        vm.expectRevert(SachetMarket.PoolClosed.selector);
         escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
     }
 
@@ -132,7 +132,7 @@ contract SachetMarketTest is Test {
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
         vm.prank(resolver);
-        vm.expectRevert("SachetMarket: pool still open");
+        vm.expectRevert(SachetMarket.PoolStillOpen.selector);
         escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME);
     }
 
@@ -144,7 +144,7 @@ contract SachetMarketTest is Test {
         vm.startPrank(resolver);
         escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME);
         
-        vm.expectRevert("SachetMarket: already resolved/cancelled");
+        vm.expectRevert(SachetMarket.AlreadyResolvedOrCancelled.selector);
         escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME);
         vm.stopPrank();
     }
@@ -156,7 +156,7 @@ contract SachetMarketTest is Test {
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
-        vm.expectRevert("SachetMarket: amount must be > 0");
+        vm.expectRevert(SachetMarket.AmountMustBeGreaterThan0.selector);
         escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 0);
     }
 
@@ -165,7 +165,7 @@ contract SachetMarketTest is Test {
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
-        vm.expectRevert("SachetMarket: invalid outcome");
+        vm.expectRevert(SachetMarket.InvalidOutcome.selector);
         escrow.placeBet(bytes32(0), SachetMarket.Outcome.UNSET, 100);
     }
 
@@ -175,7 +175,7 @@ contract SachetMarketTest is Test {
         
         vm.startPrank(alice);
         escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
-        vm.expectRevert("SachetMarket: already bet this pool");
+        vm.expectRevert(SachetMarket.AlreadyBetThisPool.selector);
         escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
         vm.stopPrank();
     }
@@ -223,7 +223,7 @@ contract SachetMarketTest is Test {
         vm.warp(block.timestamp + 2 days);
         
         vm.prank(alice);
-        vm.expectRevert("SachetMarket: too late to withdraw");
+        vm.expectRevert(SachetMarket.TooLateToWithdraw.selector);
         escrow.withdrawBet(bytes32(0));
     }
 
@@ -234,7 +234,7 @@ contract SachetMarketTest is Test {
         vm.startPrank(alice);
         escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
         escrow.withdrawBet(bytes32(0));
-        vm.expectRevert("SachetMarket: no active bet");
+        vm.expectRevert(SachetMarket.NoActiveBet.selector);
         escrow.withdrawBet(bytes32(0));
         vm.stopPrank();
     }
@@ -254,7 +254,7 @@ contract SachetMarketTest is Test {
         escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME);
         
         vm.prank(alice);
-        vm.expectRevert("SachetMarket: no claimable bet");
+        vm.expectRevert(SachetMarket.NoClaimableBet.selector);
         escrow.claim(bytes32(0));
     }
 
@@ -349,7 +349,7 @@ contract SachetMarketTest is Test {
         
         vm.startPrank(alice);
         escrow.claim(bytes32(0));
-        vm.expectRevert("SachetMarket: already claimed");
+        vm.expectRevert(SachetMarket.AlreadyClaimed.selector);
         escrow.claim(bytes32(0));
         vm.stopPrank();
     }
