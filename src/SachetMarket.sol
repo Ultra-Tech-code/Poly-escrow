@@ -7,7 +7,7 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
-contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
+contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -49,8 +49,8 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
     event Claimed(bytes32 indexed poolId, address indexed user, uint256 payout);
 
     constructor(address _bettingToken, address _adminMultisig) {
-        require(_bettingToken != address(0), "Zero address");
-        require(_adminMultisig != address(0), "Zero address");
+        require(_bettingToken != address(0), "SachetMarket: Zero address");
+        require(_adminMultisig != address(0), "SachetMarket: Zero address");
         bettingToken = IERC20(_bettingToken);
         _grantRole(DEFAULT_ADMIN_ROLE, _adminMultisig);
         _grantRole(ADMIN_ROLE, _adminMultisig);
@@ -65,9 +65,9 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
     }
 
     function launchPool(bytes32 poolId, uint64 expiresAt) external onlyRole(ADMIN_ROLE) {
-        require(expiresAt > block.timestamp, "expiresAt in past");
-        require(expiresAt <= block.timestamp + MAX_POOL_DURATION, "expiresAt exceeds max duration");
-        require(pools[poolId].expiresAt == 0, "round already exists");
+        require(expiresAt > block.timestamp, "SachetMarket: expiresAt in past");
+        require(expiresAt <= block.timestamp + MAX_POOL_DURATION, "SachetMarket: expiresAt exceeds max duration");
+        require(pools[poolId].expiresAt == 0, "SachetMarket: pool already exists");
 
         Pool storage r = pools[poolId];
         r.expiresAt = expiresAt;
@@ -79,19 +79,19 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
 
     function placeBet(bytes32 poolId, Outcome outcome, uint256 amount) external nonReentrant whenNotPaused {
         Pool storage r = pools[poolId];
-        require(r.expiresAt != 0, "round does not exist");
-        require(block.timestamp < r.expiresAt, "round closed");
-        require(r.status == PoolStatus.OPEN, "round not open");
-        require(outcome != Outcome.UNSET, "invalid outcome");
-        require(amount > 0, "amount must be > 0");
+        require(r.expiresAt != 0, "SachetMarket: pool does not exist");
+        require(block.timestamp < r.expiresAt, "SachetMarket: pool closed");
+        require(r.status == PoolStatus.OPEN, "SachetMarket: pool not open");
+        require(outcome != Outcome.UNSET, "SachetMarket: invalid outcome");
+        require(amount > 0, "SachetMarket: amount must be > 0");
 
         Bet storage b = bets[poolId][msg.sender];
-        require(b.amount == 0, "already bet this round");
+        require(b.amount == 0, "SachetMarket: already bet this pool");
 
         uint256 balanceBefore = bettingToken.balanceOf(address(this));
         bettingToken.safeTransferFrom(msg.sender, address(this), amount);
         uint256 receivedAmount = bettingToken.balanceOf(address(this)) - balanceBefore;
-        require(receivedAmount > 0, "received amount must be > 0");
+        require(receivedAmount > 0, "SachetMarket: received amount must be > 0");
 
         b.amount = receivedAmount;
         b.outcome = outcome;
@@ -113,11 +113,11 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
 
     function withdrawBet(bytes32 poolId) external nonReentrant {
         Pool storage r = pools[poolId];
-        require(block.timestamp < r.expiresAt, "too late to withdraw");
-        require(r.status == PoolStatus.OPEN, "round not open");
+        require(block.timestamp < r.expiresAt, "SachetMarket: too late to withdraw");
+        require(r.status == PoolStatus.OPEN, "SachetMarket: pool not open");
 
         Bet storage b = bets[poolId][msg.sender];
-        require(b.amount > 0 && !b.withdrawn, "no active bet");
+        require(b.amount > 0 && !b.withdrawn, "SachetMarket: no active bet");
 
         uint256 amountToReturn = b.amount;
         
@@ -140,10 +140,10 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
 
     function resolvePool(bytes32 poolId, Outcome result) external onlyRole(RESOLVER_ROLE) {
         Pool storage r = pools[poolId];
-        require(r.expiresAt != 0, "round does not exist");
-        require(block.timestamp >= r.expiresAt, "round still open");
-        require(r.status == PoolStatus.OPEN, "already resolved/cancelled");
-        require(result != Outcome.UNSET, "invalid result");
+        require(r.expiresAt != 0, "SachetMarket: pool does not exist");
+        require(block.timestamp >= r.expiresAt, "SachetMarket: pool still open");
+        require(r.status == PoolStatus.OPEN, "SachetMarket: already resolved/cancelled");
+        require(result != Outcome.UNSET, "SachetMarket: invalid result");
 
         r.status = PoolStatus.RESOLVED;
         r.result = result;
@@ -153,8 +153,8 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
 
     function cancelPool(bytes32 poolId) external onlyRole(ADMIN_ROLE) {
         Pool storage r = pools[poolId];
-        require(r.expiresAt != 0, "round does not exist");
-        require(r.status == PoolStatus.OPEN, "round not open");
+        require(r.expiresAt != 0, "SachetMarket: pool does not exist");
+        require(r.status == PoolStatus.OPEN, "SachetMarket: pool not open");
         
         r.status = PoolStatus.CANCELLED;
         
@@ -169,8 +169,8 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
         );
 
         Bet storage b = bets[poolId][msg.sender];
-        require(b.amount > 0 && !b.withdrawn, "no claimable bet");
-        require(!b.claimed, "already claimed");
+        require(b.amount > 0 && !b.withdrawn, "SachetMarket: no claimable bet");
+        require(!b.claimed, "SachetMarket: already claimed");
 
         uint256 payout = 0;
 
@@ -212,12 +212,12 @@ contract PredictEscrow is AccessControl, ReentrancyGuard, Pausable {
 
     function sweepDust(bytes32 poolId, address to) external onlyRole(ADMIN_ROLE) {
         Pool storage r = pools[poolId];
-        require(r.status == PoolStatus.RESOLVED || r.status == PoolStatus.CANCELLED, "not resolved or cancelled");
-        require(block.timestamp >= r.expiresAt + 90 days, "claim window still open");
+        require(r.status == PoolStatus.RESOLVED || r.status == PoolStatus.CANCELLED, "SachetMarket: not resolved or cancelled");
+        require(block.timestamp >= r.expiresAt + 90 days, "SachetMarket: claim window still open");
         
         // This is safe because totalClaimed can only be at most totalPool in RESOLVED/CANCELLED.
         uint256 dust = r.totalPool - r.totalClaimed;
-        require(dust > 0, "no dust to sweep");
+        require(dust > 0, "SachetMarket: no dust to sweep");
         
         r.totalClaimed = r.totalPool; // Prevent double sweeping
         

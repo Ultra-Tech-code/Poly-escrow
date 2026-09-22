@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
-import {PredictEscrow} from "../src/PredictEscrow.sol";
+import {SachetMarket} from "../src/SachetMarket.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -15,11 +15,11 @@ contract MockToken is ERC20 {
 }
 
 contract ReentrantMockToken is ERC20 {
-    PredictEscrow public escrow;
+    SachetMarket public escrow;
     
     constructor() ERC20("Reentrant Mock Token", "RMTK") {}
     
-    function setEscrow(PredictEscrow _escrow) external {
+    function setEscrow(SachetMarket _escrow) external {
         escrow = _escrow;
     }
     
@@ -32,7 +32,7 @@ contract ReentrantMockToken is ERC20 {
         
         // Try to re-enter
         if (address(escrow) != address(0)) {
-            try escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, amount) {
+            try escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, amount) {
                 // Should revert
             } catch {
                 // Expected
@@ -43,8 +43,8 @@ contract ReentrantMockToken is ERC20 {
     }
 }
 
-contract PredictEscrowTest is Test {
-    PredictEscrow public escrow;
+contract SachetMarketTest is Test {
+    SachetMarket public escrow;
     MockToken public token;
 
     address public admin = address(1);
@@ -57,7 +57,7 @@ contract PredictEscrowTest is Test {
         token = new MockToken();
         
         vm.startPrank(admin);
-        escrow = new PredictEscrow(address(token), admin);
+        escrow = new SachetMarket(address(token), admin);
         escrow.grantRole(escrow.RESOLVER_ROLE(), resolver);
         vm.stopPrank();
         
@@ -96,24 +96,24 @@ contract PredictEscrowTest is Test {
         // Admin cannot resolve
         vm.prank(admin);
         vm.expectRevert();
-        escrow.resolvePool(bytes32(0), PredictEscrow.Outcome.HOME);
+        escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME);
         
         // Alice cannot resolve
         vm.prank(alice);
         vm.expectRevert();
-        escrow.resolvePool(bytes32(0), PredictEscrow.Outcome.HOME);
+        escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME);
         
         // Resolver can resolve
         vm.prank(resolver);
-        escrow.resolvePool(bytes32(0), PredictEscrow.Outcome.HOME);
+        escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME);
     }
 
     // --- Pool Lifecycle ---
 
     function test_CannotBetBeforeRoundExists() public {
         vm.prank(alice);
-        vm.expectRevert("round does not exist");
-        escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
+        vm.expectRevert("SachetMarket: pool does not exist");
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
     }
 
     function test_CannotBetAfterEndTime() public {
@@ -123,8 +123,8 @@ contract PredictEscrowTest is Test {
         vm.warp(block.timestamp + 1 days + 1);
         
         vm.prank(alice);
-        vm.expectRevert("round closed");
-        escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
+        vm.expectRevert("SachetMarket: pool closed");
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
     }
 
     function test_CannotResolveBeforeEndTime() public {
@@ -132,8 +132,8 @@ contract PredictEscrowTest is Test {
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
         vm.prank(resolver);
-        vm.expectRevert("round still open");
-        escrow.resolvePool(bytes32(0), PredictEscrow.Outcome.HOME);
+        vm.expectRevert("SachetMarket: pool still open");
+        escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME);
     }
 
     function test_CannotResolveTwice() public {
@@ -142,10 +142,10 @@ contract PredictEscrowTest is Test {
         vm.warp(block.timestamp + 2 days);
         
         vm.startPrank(resolver);
-        escrow.resolvePool(bytes32(0), PredictEscrow.Outcome.HOME);
+        escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME);
         
-        vm.expectRevert("already resolved/cancelled");
-        escrow.resolvePool(bytes32(0), PredictEscrow.Outcome.HOME);
+        vm.expectRevert("SachetMarket: already resolved/cancelled");
+        escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME);
         vm.stopPrank();
     }
 
@@ -156,8 +156,8 @@ contract PredictEscrowTest is Test {
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
-        vm.expectRevert("amount must be > 0");
-        escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 0);
+        vm.expectRevert("SachetMarket: amount must be > 0");
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 0);
     }
 
     function test_BetRevertsOnUnsetOutcome() public {
@@ -165,8 +165,8 @@ contract PredictEscrowTest is Test {
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
-        vm.expectRevert("invalid outcome");
-        escrow.placeBet(bytes32(0), PredictEscrow.Outcome.UNSET, 100);
+        vm.expectRevert("SachetMarket: invalid outcome");
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.UNSET, 100);
     }
 
     function test_CannotBetTwice() public {
@@ -174,9 +174,9 @@ contract PredictEscrowTest is Test {
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
         vm.startPrank(alice);
-        escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
-        vm.expectRevert("already bet this round");
-        escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
+        vm.expectRevert("SachetMarket: already bet this pool");
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
         vm.stopPrank();
     }
 
@@ -185,7 +185,7 @@ contract PredictEscrowTest is Test {
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
-        escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
         
         (uint256 amount, , , ) = escrow.bets(bytes32(0), alice);
         assertEq(amount, 100);
@@ -199,7 +199,7 @@ contract PredictEscrowTest is Test {
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
-        escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
         
         vm.prank(alice);
         escrow.withdrawBet(bytes32(0));
@@ -218,12 +218,12 @@ contract PredictEscrowTest is Test {
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
-        escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
         
         vm.warp(block.timestamp + 2 days);
         
         vm.prank(alice);
-        vm.expectRevert("too late to withdraw");
+        vm.expectRevert("SachetMarket: too late to withdraw");
         escrow.withdrawBet(bytes32(0));
     }
 
@@ -232,9 +232,9 @@ contract PredictEscrowTest is Test {
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
         vm.startPrank(alice);
-        escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
         escrow.withdrawBet(bytes32(0));
-        vm.expectRevert("no active bet");
+        vm.expectRevert("SachetMarket: no active bet");
         escrow.withdrawBet(bytes32(0));
         vm.stopPrank();
     }
@@ -244,17 +244,17 @@ contract PredictEscrowTest is Test {
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
-        escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
         
         vm.prank(alice);
         escrow.withdrawBet(bytes32(0));
         
         vm.warp(block.timestamp + 2 days);
         vm.prank(resolver);
-        escrow.resolvePool(bytes32(0), PredictEscrow.Outcome.HOME);
+        escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME);
         
         vm.prank(alice);
-        vm.expectRevert("no claimable bet");
+        vm.expectRevert("SachetMarket: no claimable bet");
         escrow.claim(bytes32(0));
     }
 
@@ -265,13 +265,13 @@ contract PredictEscrowTest is Test {
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
         // WIN=100 (Alice), DRAW=50 (Bob), LOSE=50 (Charlie)
-        vm.prank(alice); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
-        vm.prank(bob); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.DRAW, 50);
-        vm.prank(charlie); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.AWAY, 50);
+        vm.prank(alice); escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
+        vm.prank(bob); escrow.placeBet(bytes32(0), SachetMarket.Outcome.DRAW, 50);
+        vm.prank(charlie); escrow.placeBet(bytes32(0), SachetMarket.Outcome.AWAY, 50);
         
         vm.warp(block.timestamp + 2 days);
         vm.prank(resolver);
-        escrow.resolvePool(bytes32(0), PredictEscrow.Outcome.HOME);
+        escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME);
         
         uint256 aliceBalBefore = token.balanceOf(alice);
         vm.prank(alice);
@@ -287,12 +287,12 @@ contract PredictEscrowTest is Test {
         vm.prank(admin);
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
-        vm.prank(alice); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
-        vm.prank(bob); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 50);
+        vm.prank(alice); escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
+        vm.prank(bob); escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 50);
         
         vm.warp(block.timestamp + 2 days);
         vm.prank(resolver);
-        escrow.resolvePool(bytes32(0), PredictEscrow.Outcome.HOME);
+        escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME);
         
         uint256 aliceBalBefore = token.balanceOf(alice);
         vm.prank(alice); escrow.claim(bytes32(0));
@@ -307,12 +307,12 @@ contract PredictEscrowTest is Test {
         vm.prank(admin);
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
-        vm.prank(bob); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.DRAW, 100);
-        vm.prank(charlie); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.AWAY, 50);
+        vm.prank(bob); escrow.placeBet(bytes32(0), SachetMarket.Outcome.DRAW, 100);
+        vm.prank(charlie); escrow.placeBet(bytes32(0), SachetMarket.Outcome.AWAY, 50);
         
         vm.warp(block.timestamp + 2 days);
         vm.prank(resolver);
-        escrow.resolvePool(bytes32(0), PredictEscrow.Outcome.HOME); // Nobody bet WIN
+        escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME); // Nobody bet WIN
         
         // Bob and Charlie should get 0 payout and claim without reverting
         uint256 bobBalBefore = token.balanceOf(bob);
@@ -328,11 +328,11 @@ contract PredictEscrowTest is Test {
         vm.prank(admin);
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
-        vm.prank(alice); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
+        vm.prank(alice); escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
         
         vm.warp(block.timestamp + 2 days);
         vm.prank(resolver);
-        escrow.resolvePool(bytes32(0), PredictEscrow.Outcome.HOME);
+        escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME);
         
         uint256 aliceBalBefore = token.balanceOf(alice);
         vm.prank(alice); escrow.claim(bytes32(0));
@@ -342,14 +342,14 @@ contract PredictEscrowTest is Test {
     function test_DoubleClaimReverts() public {
         vm.prank(admin);
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
-        vm.prank(alice); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
+        vm.prank(alice); escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
         vm.warp(block.timestamp + 2 days);
         vm.prank(resolver);
-        escrow.resolvePool(bytes32(0), PredictEscrow.Outcome.HOME);
+        escrow.resolvePool(bytes32(0), SachetMarket.Outcome.HOME);
         
         vm.startPrank(alice);
         escrow.claim(bytes32(0));
-        vm.expectRevert("already claimed");
+        vm.expectRevert("SachetMarket: already claimed");
         escrow.claim(bytes32(0));
         vm.stopPrank();
     }
@@ -357,8 +357,8 @@ contract PredictEscrowTest is Test {
     function test_ClaimOnCancelledRound() public {
         vm.prank(admin);
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
-        vm.prank(alice); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
-        vm.prank(bob); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.AWAY, 200);
+        vm.prank(alice); escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
+        vm.prank(bob); escrow.placeBet(bytes32(0), SachetMarket.Outcome.AWAY, 200);
         
         vm.prank(admin);
         escrow.cancelPool(bytes32(0));
@@ -380,14 +380,14 @@ contract PredictEscrowTest is Test {
         amount3 = uint128(bound(amount3, 1, 10000 ether));
         
         // Convert to Outcome
-        PredictEscrow.Outcome result = PredictEscrow.Outcome((outcomeChoice % 3) + 1);
+        SachetMarket.Outcome result = SachetMarket.Outcome((outcomeChoice % 3) + 1);
         
         vm.prank(admin);
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
-        vm.prank(alice); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, amount1);
-        vm.prank(bob); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.DRAW, amount2);
-        vm.prank(charlie); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.AWAY, amount3);
+        vm.prank(alice); escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, amount1);
+        vm.prank(bob); escrow.placeBet(bytes32(0), SachetMarket.Outcome.DRAW, amount2);
+        vm.prank(charlie); escrow.placeBet(bytes32(0), SachetMarket.Outcome.AWAY, amount3);
         
         uint256 expectedTotalPool = uint256(amount1) + amount2 + amount3;
         (,,,,,,uint256 totalPool,) = escrow.pools(bytes32(0));
@@ -406,9 +406,9 @@ contract PredictEscrowTest is Test {
         assertTrue(totalClaimed <= expectedTotalPool, "totalClaimed exceeds totalPool");
         
         // Assert losers got 0
-        if (result != PredictEscrow.Outcome.HOME) assertEq(token.balanceOf(alice) - b1, 0);
-        if (result != PredictEscrow.Outcome.DRAW) assertEq(token.balanceOf(bob) - b2, 0);
-        if (result != PredictEscrow.Outcome.AWAY) assertEq(token.balanceOf(charlie) - b3, 0);
+        if (result != SachetMarket.Outcome.HOME) assertEq(token.balanceOf(alice) - b1, 0);
+        if (result != SachetMarket.Outcome.DRAW) assertEq(token.balanceOf(bob) - b2, 0);
+        if (result != SachetMarket.Outcome.AWAY) assertEq(token.balanceOf(charlie) - b3, 0);
     }
 
     // --- Reentrancy ---
@@ -417,7 +417,7 @@ contract PredictEscrowTest is Test {
         ReentrantMockToken rToken = new ReentrantMockToken();
         
         vm.prank(admin);
-        PredictEscrow rEscrow = new PredictEscrow(address(rToken), admin);
+        SachetMarket rEscrow = new SachetMarket(address(rToken), admin);
         rToken.setEscrow(rEscrow);
         
         rToken.mint(alice, 1000);
@@ -428,7 +428,7 @@ contract PredictEscrowTest is Test {
         rEscrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
         vm.prank(alice);
-        rEscrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
+        rEscrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
         
         (uint256 amt, , , ) = rEscrow.bets(bytes32(0), alice);
         assertEq(amt, 100); // Because inner call reverted, so only outer succeeded
@@ -441,15 +441,15 @@ contract PredictEscrowTest is Test {
         vm.prank(admin);
         escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
         
-        vm.prank(alice); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.HOME, 100);
-        vm.prank(bob); escrow.placeBet(bytes32(0), PredictEscrow.Outcome.AWAY, 200);
+        vm.prank(alice); escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
+        vm.prank(bob); escrow.placeBet(bytes32(0), SachetMarket.Outcome.AWAY, 200);
         
         vm.prank(admin);
         escrow.pause();
         
         vm.prank(charlie);
         vm.expectRevert();
-        escrow.placeBet(bytes32(0), PredictEscrow.Outcome.DRAW, 100);
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.DRAW, 100);
         
         // Withdraw should succeed
         vm.prank(alice);
@@ -457,7 +457,7 @@ contract PredictEscrowTest is Test {
         
         vm.warp(block.timestamp + 2 days);
         vm.prank(resolver);
-        escrow.resolvePool(bytes32(0), PredictEscrow.Outcome.AWAY);
+        escrow.resolvePool(bytes32(0), SachetMarket.Outcome.AWAY);
         
         // Claim should succeed
         vm.prank(bob);
