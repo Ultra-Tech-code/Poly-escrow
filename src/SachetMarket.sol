@@ -40,7 +40,6 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
      * @param poolDraw Total tokens wagered on the DRAW outcome
      * @param poolAway Total tokens wagered on the AWAY outcome
      * @param totalPool The total aggregated tokens wagered across all outcomes
-     * @param totalClaimed Tracks total payouts to securely sweep unclaimed dust
      */
     struct Pool {
         uint64 expiresAt;
@@ -80,8 +79,6 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
     error AlreadyResolvedOrCancelled();
     /// @notice Thrown when a bet is attempted with an amount of 0
     error AmountMustBeGreaterThan0();
-    /// @notice Thrown when an admin attempts to sweep dust before the 90-day claim window closes
-    error ClaimWindowStillOpen();
     /// @notice Thrown when launching a pool with an expiry too far into the future
     error ExpiresatExceedsMaxDuration();
     /// @notice Thrown when launching a pool with a past expiry
@@ -94,8 +91,6 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
     error NoActiveBet();
     /// @notice Thrown when a user attempts to claim but has no winning or refundable bet
     error NoClaimableBet();
-    /// @notice Thrown when there is no dust left to sweep from a pool
-    error NoDustToSweep();
     /// @notice Thrown when attempting an action that requires the pool to be RESOLVED or CANCELLED
     error NotResolvedOrCancelled();
     /// @notice Thrown when an admin attempts to launch a pool ID that is already in use
@@ -345,7 +340,6 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         b.claimed = true;
         
         if (payout > 0) {
-            r.totalClaimed += payout;
             sachetMarketToken.safeTransfer(msg.sender, payout);
         }
 
