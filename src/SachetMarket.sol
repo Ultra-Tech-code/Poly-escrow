@@ -57,13 +57,11 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
      * @notice Data structure representing a user's bet in a specific pool
      * @param amount The number of tokens wagered
      * @param outcome The outcome the user bet on
-     * @param withdrawn True if the user withdrew their bet before the pool locked
      * @param claimed True if the user successfully claimed their winnings or refund
      */
     struct Bet {
         uint256 amount;
         Outcome outcome;
-        bool withdrawn;
         bool claimed;
     }
 
@@ -202,7 +200,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         if (!(amount > 0)) revert AmountMustBeGreaterThan0();
 
         Bet storage b = bets[poolId][msg.sender];
-        bool hasActiveBet = (b.amount > 0 && !b.withdrawn);
+        bool hasActiveBet = (b.amount > 0);
         
         if (hasActiveBet) {
             if (!(b.outcome == outcome)) revert CannotChangeOutcome();
@@ -218,7 +216,6 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         } else {
             b.amount = receivedAmount;
             b.outcome = outcome;
-            b.withdrawn = false;
             b.claimed = false;
         }
         
@@ -247,7 +244,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         if (!(r.status == PoolStatus.OPEN)) revert PoolNotOpen();
 
         Bet storage b = bets[poolId][msg.sender];
-        if (!(b.amount > 0 && !b.withdrawn)) revert NoActiveBet();
+        if (!(b.amount > 0)) revert NoActiveBet();
 
         uint256 amountToReturn = b.amount;
         
@@ -261,7 +258,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
 
         r.totalPool -= amountToReturn;
         
-        b.withdrawn = true;
+        b.amount = 0;
         
         sachetMarketToken.safeTransfer(msg.sender, amountToReturn);
         
@@ -314,7 +311,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         if (!(r.status == PoolStatus.RESOLVED || r.status == PoolStatus.CANCELLED)) revert NotResolvedOrCancelled();
 
         Bet storage b = bets[poolId][msg.sender];
-        if (!(b.amount > 0 && !b.withdrawn)) revert NoClaimableBet();
+        if (!(b.amount > 0)) revert NoClaimableBet();
         if (!(!b.claimed)) revert AlreadyClaimed();
 
         uint256 payout = 0;

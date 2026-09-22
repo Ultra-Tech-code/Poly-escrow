@@ -178,16 +178,7 @@ contract SachetMarketTest is Test {
         escrow.placeBet(bytes32(0), SachetMarket.Outcome.VOID, 100);
     }
 
-    function test_CannotBetTwice() public {
-        vm.prank(admin);
-        escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
-        
-        vm.startPrank(alice);
-        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
-        vm.expectRevert(SachetMarket.AlreadyBetThisPool.selector);
-        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
-        vm.stopPrank();
-    }
+
 
     function test_TokenTransferMatchesRecordedAmount() public {
         vm.prank(admin);
@@ -196,7 +187,7 @@ contract SachetMarketTest is Test {
         vm.prank(alice);
         escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
         
-        (uint256 amount, , , ) = escrow.bets(bytes32(0), alice);
+        (uint256 amount, , ) = escrow.bets(bytes32(0), alice);
         assertEq(amount, 100);
         assertEq(token.balanceOf(address(escrow)), 100);
     }
@@ -213,9 +204,9 @@ contract SachetMarketTest is Test {
         vm.prank(alice);
         escrow.withdrawBet(bytes32(0));
         
-        (uint256 amount, , bool withdrawn, ) = escrow.bets(bytes32(0), alice);
-        assertEq(amount, 100);
-        assertTrue(withdrawn);
+        (uint256 amount, , ) = escrow.bets(bytes32(0), alice);
+        assertEq(amount, 0);
+
         
         (,,,,,,uint256 totalPool,) = escrow.pools(bytes32(0));
         assertEq(totalPool, 0);
@@ -400,6 +391,58 @@ contract SachetMarketTest is Test {
         assertEq(token.balanceOf(bob) - bobBalBefore, 200);
     }
 
+    function test_IncreaseBetSameOutcome() public {
+        vm.prank(admin);
+        escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
+        
+        vm.startPrank(alice);
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 200);
+        vm.stopPrank();
+
+        SachetMarket.Bet memory b = escrow.getUserStake(bytes32(0), alice);
+        assertEq(b.amount, 300);
+        assertEq(uint(b.outcome), uint(SachetMarket.Outcome.HOME));
+        
+        SachetMarket.Pool memory p = escrow.getPool(bytes32(0));
+        assertEq(p.poolHome, 300);
+        assertEq(p.totalPool, 300);
+    }
+
+    function test_CannotChangeOutcomeWithoutWithdraw() public {
+        vm.prank(admin);
+        escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
+        
+        vm.startPrank(alice);
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
+        
+        vm.expectRevert(SachetMarket.CannotChangeOutcome.selector);
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.AWAY, 100);
+        vm.stopPrank();
+    }
+
+    function test_CanBetAgainWithDifferentOutcomeAfterWithdraw() public {
+        vm.prank(admin);
+        escrow.launchPool(bytes32(0), uint64(block.timestamp + 1 days));
+        
+        vm.startPrank(alice);
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
+        escrow.withdrawBet(bytes32(0));
+        
+        // Bet again on AWAY
+        escrow.placeBet(bytes32(0), SachetMarket.Outcome.AWAY, 200);
+        vm.stopPrank();
+        
+        SachetMarket.Bet memory b = escrow.getUserStake(bytes32(0), alice);
+        assertEq(b.amount, 200);
+        assertEq(uint(b.outcome), uint(SachetMarket.Outcome.AWAY));
+        
+        SachetMarket.Pool memory p = escrow.getPool(bytes32(0));
+        assertEq(p.poolHome, 0); // Withdrawn
+        assertEq(p.poolAway, 200);
+        assertEq(p.totalPool, 200);
+    }
+
     // --- Fuzz Testing ---
 
     function testFuzz_PayoutMath(uint128 amount1, uint128 amount2, uint128 amount3, uint8 outcomeChoice) public {
@@ -458,7 +501,7 @@ contract SachetMarketTest is Test {
         vm.prank(alice);
         rEscrow.placeBet(bytes32(0), SachetMarket.Outcome.HOME, 100);
         
-        (uint256 amt, , , ) = rEscrow.bets(bytes32(0), alice);
+        (uint256 amt, , ) = rEscrow.bets(bytes32(0), alice);
         assertEq(amt, 100); // Because inner call reverted, so only outer succeeded
         assertEq(rToken.balanceOf(address(rEscrow)), 100);
     }
