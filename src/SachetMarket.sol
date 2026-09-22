@@ -223,4 +223,12 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         
         bettingToken.safeTransfer(to, dust);
     }
+
+    function getPool(bytes32 poolId) external view returns (Pool memory) {
+        return pools[poolId];
+    }
+
+    function getUserStake(bytes32 poolId, address user) external view returns (Bet memory) {
+        return bets[poolId][user];
+    }
 }
