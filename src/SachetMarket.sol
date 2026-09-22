@@ -7,11 +7,13 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
-/**
- * @title SachetMarket
- * @notice A decentralized pari-mutuel betting protocol.
- * @dev Inherits from AccessControl, ReentrancyGuard, and Pausable.
- */
+
+/// @title SachetMarket
+/// @notice Singleton pari-mutuel market that escrows `$SACH` stakes on 1X2
+///         football outcomes. The operator opens and resolves pools; winners and
+///         refundees pull their payout with `claim`.
+/// @dev Money math mirrors the off-chain projection in `lib/odds.ts` exactly:
+///      integer floor arithmetic, rake floored off the total pot.
 contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
