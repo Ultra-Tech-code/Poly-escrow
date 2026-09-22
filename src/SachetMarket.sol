@@ -7,15 +7,41 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
+/**
+ * @title SachetMarket
+ * @notice A decentralized pari-mutuel betting protocol.
+ * @dev Inherits from AccessControl, ReentrancyGuard, and Pausable.
+ */
 contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
+    /// @notice Role designated for platform administration
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    /// @notice Role designated for providing the real-world outcome of a pool
     bytes32 public constant RESOLVER_ROLE = keccak256("RESOLVER_ROLE");
 
+    /**
+     * @notice Possible outcomes for a bet or a pool result
+     * @dev UNSET is default, VOID results in a full refund.
+     */
     enum Outcome { UNSET, HOME, DRAW, AWAY, VOID }
+
+    /**
+     * @notice The current status of a betting pool
+     */
     enum PoolStatus { OPEN, LOCKED, RESOLVED, CANCELLED }
 
+    /**
+     * @notice Data structure defining a betting pool
+     * @param expiresAt The timestamp when betting locks and the event is presumed to start
+     * @param status The current operational status of the pool
+     * @param result The final outcome of the pool, set by a resolver
+     * @param poolHome Total tokens wagered on the HOME outcome
+     * @param poolDraw Total tokens wagered on the DRAW outcome
+     * @param poolAway Total tokens wagered on the AWAY outcome
+     * @param totalPool The total aggregated tokens wagered across all outcomes
+     * @param totalClaimed Tracks total payouts to securely sweep unclaimed dust
+     */
     struct Pool {
         uint64 expiresAt;
         PoolStatus status;
@@ -27,6 +53,13 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         uint256 totalClaimed; // Tracked to safely sweep dust
     }
 
+    /**
+     * @notice Data structure representing a user's bet in a specific pool
+     * @param amount The number of tokens wagered
+     * @param outcome The outcome the user bet on
+     * @param withdrawn True if the user withdrew their bet before the pool locked
+     * @param claimed True if the user successfully claimed their winnings or refund
+     */
     struct Bet {
         uint256 amount;
         Outcome outcome;
@@ -34,43 +67,79 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         bool claimed;
     }
 
+    /// @notice Mapping of pool IDs to their respective Pool configurations
     mapping(bytes32 => Pool) public pools;
+    /// @notice Mapping of pool IDs to user addresses to their respective Bets
     mapping(bytes32 => mapping(address => Bet)) public bets;
 
+    /// @notice The ERC20 token currently configured for wagering
     IERC20 public sachetMarketToken;
 
+    // Custom Errors
+    /// @notice Thrown when a user attempts to place a bet in a pool they have already bet on
     error AlreadyBetThisPool();
+    /// @notice Thrown when a user attempts to claim a payout more than once
     error AlreadyClaimed();
+    /// @notice Thrown when an admin/resolver attempts an action on a pool that is already finalized
     error AlreadyResolvedOrCancelled();
+    /// @notice Thrown when a bet is attempted with an amount of 0
     error AmountMustBeGreaterThan0();
+    /// @notice Thrown when an admin attempts to sweep dust before the 90-day claim window closes
     error ClaimWindowStillOpen();
+    /// @notice Thrown when launching a pool with an expiry too far into the future
     error ExpiresatExceedsMaxDuration();
+    /// @notice Thrown when launching a pool with a past expiry
     error ExpiresatInPast();
+    /// @notice Thrown when an invalid outcome is selected (e.g., betting on UNSET or VOID)
     error InvalidOutcome();
+    /// @notice Thrown when a resolver attempts to resolve a pool with an invalid result
     error InvalidResult();
+    /// @notice Thrown when a user attempts to withdraw a bet they haven't placed
     error NoActiveBet();
+    /// @notice Thrown when a user attempts to claim but has no winning or refundable bet
     error NoClaimableBet();
+    /// @notice Thrown when there is no dust left to sweep from a pool
     error NoDustToSweep();
+    /// @notice Thrown when attempting an action that requires the pool to be RESOLVED or CANCELLED
     error NotResolvedOrCancelled();
+    /// @notice Thrown when an admin attempts to launch a pool ID that is already in use
     error PoolAlreadyExists();
+    /// @notice Thrown when a user attempts to bet on a pool that has passed its expiry
     error PoolClosed();
+    /// @notice Thrown when attempting to interact with a pool that does not exist
     error PoolDoesNotExist();
+    /// @notice Thrown when attempting an action that requires the pool to be OPEN
     error PoolNotOpen();
+    /// @notice Thrown when attempting to resolve a pool before its expiry time
     error PoolStillOpen();
+    /// @notice Thrown when the tokens received by the contract for a bet are 0 (e.g., due to fees)
     error ReceivedAmountMustBeGreaterThan0();
+    /// @notice Thrown when a user attempts to withdraw a bet after the pool has locked
     error TooLateToWithdraw();
+    /// @notice Thrown when a zero address is provided for critical roles or tokens
     error ZeroAddress();
+    /// @notice Thrown when an admin attempts to withdraw more treasury tokens than available
     error AmountExceedsBalance();
 
+    /// @notice Maximum allowed duration between pool creation and expiry
     uint256 public constant MAX_POOL_DURATION = 30 days;
 
+    // Events
+    /// @notice Emitted when a new betting pool is created
     event PoolLaunched(bytes32 indexed poolId, uint64 expiresAt);
+    /// @notice Emitted when a user places a valid bet
     event BetPlaced(bytes32 indexed poolId, address indexed user, Outcome outcome, uint256 amount);
+    /// @notice Emitted when a user successfully withdraws a bet before the lock time
     event BetWithdrawn(bytes32 indexed poolId, address indexed user, uint256 amount);
+    /// @notice Emitted when a pool is finalized by a resolver
     event PoolResolved(bytes32 indexed poolId, Outcome result);
+    /// @notice Emitted when a pool is emergency cancelled by an admin
     event PoolCancelled(bytes32 indexed poolId);
+    /// @notice Emitted when a user claims their winnings or refund
     event Claimed(bytes32 indexed poolId, address indexed user, uint256 payout);
+    /// @notice Emitted when the betting token is updated by an admin
     event TokenUpdated(address indexed oldToken, address indexed newToken);
+    /// @notice Emitted when the treasury withdraws funds from the contract
     event TreasuryWithdrawn(address indexed token, address indexed to, uint256 amount);
 
 
@@ -220,7 +289,7 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
 
 
     /**
-     * @notice Cancels a pool, allowing all users to claim a full refund.
+     * @notice Cancels a pool, allowing all users to claim a full refund. Emergency Switch
      * @param poolId The unique identifier for the pool.
      * @dev Only callable by accounts with the ADMIN_ROLE.
      */
