@@ -73,6 +73,12 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
     event TokenUpdated(address indexed oldToken, address indexed newToken);
     event TreasuryWithdrawn(address indexed token, address indexed to, uint256 amount);
 
+
+    /**
+     * @notice Initializes the SachetMarket contract.
+     * @param _sachetMarketToken The address of the ERC20 token used for betting.
+     * @param _adminMultisig The address to be granted DEFAULT_ADMIN_ROLE and ADMIN_ROLE.
+     */
     constructor(address _sachetMarketToken, address _adminMultisig) {
         if (!(_sachetMarketToken != address(0))) revert ZeroAddress();
         if (!(_adminMultisig != address(0))) revert ZeroAddress();
@@ -81,14 +87,31 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         _grantRole(ADMIN_ROLE, _adminMultisig);
     }
 
+
+    /**
+     * @notice Pauses the contract, disabling new bets.
+     * @dev Only callable by accounts with the ADMIN_ROLE.
+     */
     function pause() external onlyRole(ADMIN_ROLE) {
         _pause();
     }
 
+
+    /**
+     * @notice Unpauses the contract, enabling new bets.
+     * @dev Only callable by accounts with the ADMIN_ROLE.
+     */
     function unpause() external onlyRole(ADMIN_ROLE) {
         _unpause();
     }
 
+
+    /**
+     * @notice Creates a new betting pool.
+     * @param poolId The unique identifier for the pool.
+     * @param expiresAt The timestamp after which no more bets can be placed.
+     * @dev Only callable by accounts with the ADMIN_ROLE.
+     */
     function launchPool(bytes32 poolId, uint64 expiresAt) external onlyRole(ADMIN_ROLE) {
         if (!(expiresAt > block.timestamp)) revert ExpiresatInPast();
         if (!(expiresAt <= block.timestamp + MAX_POOL_DURATION)) revert ExpiresatExceedsMaxDuration();
@@ -102,6 +125,13 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         emit PoolLaunched(poolId, expiresAt);
     }
 
+
+    /**
+     * @notice Places a bet on a specific outcome in a pool.
+     * @param poolId The unique identifier for the pool.
+     * @param outcome The predicted outcome (HOME, DRAW, or AWAY).
+     * @param amount The amount of tokens to bet.
+     */
     function placeBet(bytes32 poolId, Outcome outcome, uint256 amount) external nonReentrant whenNotPaused {
         Pool storage r = pools[poolId];
         if (!(r.expiresAt != 0)) revert PoolDoesNotExist();
@@ -136,6 +166,11 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         emit BetPlaced(poolId, msg.sender, outcome, receivedAmount);
     }
 
+
+    /**
+     * @notice Withdraws a previously placed bet before the pool expires.
+     * @param poolId The unique identifier for the pool.
+     */
     function withdrawBet(bytes32 poolId) external nonReentrant {
         Pool storage r = pools[poolId];
         if (!(block.timestamp < r.expiresAt)) revert TooLateToWithdraw();
@@ -163,6 +198,13 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         emit BetWithdrawn(poolId, msg.sender, amountToReturn);
     }
 
+
+    /**
+     * @notice Resolves a pool with the final outcome.
+     * @param poolId The unique identifier for the pool.
+     * @param result The actual real-world outcome of the event.
+     * @dev Only callable by accounts with the RESOLVER_ROLE.
+     */
     function resolvePool(bytes32 poolId, Outcome result) external onlyRole(RESOLVER_ROLE) {
         Pool storage r = pools[poolId];
         if (!(r.expiresAt != 0)) revert PoolDoesNotExist();
@@ -176,6 +218,12 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         emit PoolResolved(poolId, result);
     }
 
+
+    /**
+     * @notice Cancels a pool, allowing all users to claim a full refund.
+     * @param poolId The unique identifier for the pool.
+     * @dev Only callable by accounts with the ADMIN_ROLE.
+     */
     function cancelPool(bytes32 poolId) external onlyRole(ADMIN_ROLE) {
         Pool storage r = pools[poolId];
         if (!(r.expiresAt != 0)) revert PoolDoesNotExist();
@@ -186,12 +234,14 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         emit PoolCancelled(poolId);
     }
 
+
+    /**
+     * @notice Claims the payout or refund for a resolved or cancelled pool.
+     * @param poolId The unique identifier for the pool.
+     */
     function claim(bytes32 poolId) external nonReentrant {
         Pool storage r = pools[poolId];
-        require(
-            r.status == PoolStatus.RESOLVED || r.status == PoolStatus.CANCELLED,
-            "not resolved or cancelled"
-        );
+        if (!(r.status == PoolStatus.RESOLVED || r.status == PoolStatus.CANCELLED)) revert NotResolvedOrCancelled();
 
         Bet storage b = bets[poolId][msg.sender];
         if (!(b.amount > 0 && !b.withdrawn)) revert NoClaimableBet();
@@ -235,6 +285,12 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         emit Claimed(poolId, msg.sender, payout);
     }
 
+
+    /**
+     * @notice Updates the ERC20 token used for the market.
+     * @param newToken The address of the new ERC20 token.
+     * @dev Only callable by accounts with the ADMIN_ROLE when the contract is paused.
+     */
     function updateToken(address newToken) external onlyRole(ADMIN_ROLE) whenPaused {
         if (!(newToken != address(0))) revert ZeroAddress();
         address oldToken = address(sachetMarketToken);
@@ -242,6 +298,14 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         emit TokenUpdated(oldToken, newToken);
     }
 
+
+    /**
+     * @notice Withdraws tokens held in the contract to a specified address.
+     * @param token The address of the ERC20 token to withdraw.
+     * @param to The destination address for the tokens.
+     * @param amount The amount of tokens to withdraw (use type(uint256).max for full balance).
+     * @dev Only callable by accounts with the ADMIN_ROLE.
+     */
     function withdrawTreasury(address token, address to, uint256 amount) external onlyRole(ADMIN_ROLE) {
         if (!(to != address(0))) revert ZeroAddress();
         
@@ -258,10 +322,23 @@ contract SachetMarket is AccessControl, ReentrancyGuard, Pausable {
         }
     }
 
+
+    /**
+     * @notice Retrieves the full state of a specific pool.
+     * @param poolId The unique identifier for the pool.
+     * @return The Pool struct containing all pool details.
+     */
     function getPool(bytes32 poolId) external view returns (Pool memory) {
         return pools[poolId];
     }
 
+    
+    /**
+     * @notice Retrieves the bet details for a specific user in a pool.
+     * @param poolId The unique identifier for the pool.
+     * @param user The address of the user.
+     * @return The Bet struct containing the user's bet details.
+     */
     function getUserStake(bytes32 poolId, address user) external view returns (Bet memory) {
         return bets[poolId][user];
     }
